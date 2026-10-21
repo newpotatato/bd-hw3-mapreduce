@@ -1,0 +1,69 @@
+﻿режим: с дедупликацией и порогом работодателей
+вакансий варианта с зарплатой в RUR после очистки выбросов: 1442; после дедупликации: 1071; с навыками: 895; общая медиана: 160 000 ₽
+пороги: пара n >= 25 и работодателей >= 10; тройка n >= 20 и работодателей >= 8
+
+ПАРЫ, которые сильнее всего ПОВЫШАЮТ медиану (всего сочетаний, прошедших пороги: 153):
+  сочетание                                      n раб.   медиана  база (более частая)                 n   медиана  + навык               прибавка      %
+  .net core + mongodb                           34   13   300 000  .net core                         212   200 000  mongodb                100 000  50.0%
+  c# + kubernetes                               35   26   250 000  c#                                781   160 000  kubernetes              90 000  56.2%
+  c# + ci/cd                                    25   15   250 000  c#                                781   160 000  ci/cd                   90 000  56.2%
+  ms sql + rabbitmq                             28   15   255 500  ms sql                            194   174 000  rabbitmq                81 500  46.8%
+  mongodb + ms sql                              27   14   250 000  ms sql                            194   174 000  mongodb                 76 000  43.7%
+  entity framework + rabbitmq                   38   29   252 500  entity framework                  160   180 000  rabbitmq                72 500  40.3%
+  kubernetes + postgresql                       27   21   275 000  postgresql                        278   202 500  kubernetes              72 500  35.8%
+  docker + entity framework                     37   27   250 000  entity framework                  160   180 000  docker                  70 000  38.9%
+  c# + mongodb                                  65   29   225 000  c#                                781   160 000  mongodb                 65 000  40.6%
+  c# + kafka                                    37   25   225 000  c#                                781   160 000  kafka                   65 000  40.6%
+
+ПАРЫ, которые сильнее всего ПОНИЖАЮТ медиану (всего сочетаний, прошедших пороги: 153):
+  сочетание                                      n раб.   медиана  база (более частая)                 n   медиана  + навык               прибавка      %
+  css + html                                    42   32    83 500  html                               73   150 000  css                    -66 500 -44.3%
+  c# + ms visual studio                         55   41   100 000  c#                                781   160 000  ms visual studio       -60 000 -37.5%
+  c# + unity                                    45   37   100 000  c#                                781   160 000  unity                  -60 000 -37.5%
+  javascript + postgresql                       31   25   150 000  postgresql                        278   202 500  javascript             -52 500 -25.9%
+  ms sql + ооп                                  33   22   121 800  ms sql                            194   174 000  ооп                    -52 200 -30.0%
+  css + javascript                              35   25   100 000  javascript                        132   150 000  css                    -50 000 -33.3%
+  .net core + javascript                        31   29   150 000  .net core                         212   200 000  javascript             -50 000 -25.0%
+  .net core + asp.net core                      29   25   150 000  .net core                         212   200 000  asp.net core           -50 000 -25.0%
+  c# + c++                                      34   23   115 000  c#                                781   160 000  c++                    -45 000 -28.1%
+  .net framework + ms visual studio             28   22   120 900  .net framework                    301   165 000  ms visual studio       -44 100 -26.7%
+
+ТРОЙКИ, которые сильнее всего ПОВЫШАЮТ медиану (всего сочетаний, прошедших пороги: 228):
+  сочетание                                      n раб.   медиана  база (более частая)                 n   медиана  + навык               прибавка      %
+  .net core + asp.net + ms sql                  26   13   280 500  asp.net + ms sql                   82   155 000  .net core              125 500  81.0%
+  .net core + c# + mongodb                      30   10   300 000  .net core + c#                    185   191 400  mongodb                108 600  56.7%
+  c# + mongodb + ms sql                         23   11   275 000  c# + ms sql                       177   174 000  mongodb                101 000  58.0%
+  asp.net + entity framework + rabbitmq         24   18   250 000  asp.net + entity framework         86   160 000  rabbitmq                90 000  56.2%
+  c# + ms sql + rabbitmq                        25   13   261 000  c# + ms sql                       177   174 000  rabbitmq                87 000  50.0%
+  asp.net + css + html                          20   16   155 000  css + html                         42    83 500  asp.net                 71 500  85.6%
+  .net core + asp.net + postgresql              45   20   250 000  asp.net + postgresql              125   180 000  .net core               70 000  38.9%
+  c# + kubernetes + postgresql                  24   18   268 000  c# + postgresql                   244   200 000  kubernetes              68 000  34.0%
+  docker + entity framework + postgresql        21   18   270 000  docker + postgresql                62   202 500  entity framework        67 500  33.3%
+  css + entity framework + html                 21   16   150 000  css + html                         42    83 500  entity framework        66 500  79.6%
+
+ТРОЙКИ, которые сильнее всего ПОНИЖАЮТ медиану (всего сочетаний, прошедших пороги: 228):
+  сочетание                                      n раб.   медиана  база (более частая)                 n   медиана  + навык               прибавка      %
+  css + html + javascript                       29   21    80 000  html + javascript                  49   150 000  css                    -70 000 -46.7%
+  .net core + .net framework + postgresql       21   18   180 000  .net core + postgresql            100   250 000  .net framework         -70 000 -28.0%
+  c# + css + html                               38   28    83 500  c# + html                          68   150 000  css                    -66 500 -44.3%
+  c# + git + html                               21   17    87 000  c# + git                          248   153 300  html                   -66 300 -43.2%
+  c# + css + git                                20   16    87 000  c# + git                          248   153 300  css                    -66 300 -43.2%
+  c# + javascript + postgresql                  24   21   144 600  c# + postgresql                   244   200 000  javascript             -55 400 -27.7%
+  c# + css + javascript                         34   24    93 500  c# + javascript                   112   143 950  css                    -50 450 -35.0%
+  c# + ms sql + ооп                             30   19   125 900  c# + ms sql                       177   174 000  ооп                    -48 100 -27.6%
+  .net framework + ms sql + ооп                 24   16   125 900  .net framework + ms sql            99   174 000  ооп                    -48 100 -27.6%
+  .net core + c# + ооп                          23   19   143 550  .net core + c#                    185   191 400  ооп                    -47 850 -25.0%
+
+Медианы самых частых навыков (база для сравнения):
+  c#                            781 вакансий  479 работодателей  медиана  160 000
+  asp.net                       306 вакансий  191 работодателей  медиана  175 000
+  .net framework                301 вакансий  198 работодателей  медиана  165 000
+  postgresql                    278 вакансий  171 работодателей  медиана  202 500
+  git                           269 вакансий  190 работодателей  медиана  160 000
+  sql                           253 вакансий  172 работодателей  медиана  150 000
+  .net core                     212 вакансий  141 работодателей  медиана  200 000
+  ms sql                        194 вакансий  125 работодателей  медиана  174 000
+  entity framework              160 вакансий  110 работодателей  медиана  180 000
+  javascript                    132 вакансий   92 работодателей  медиана  150 000
+  rabbitmq                      123 вакансий   76 работодателей  медиана  225 000
+  ооп                           109 вакансий   76 работодателей  медиана  143 550

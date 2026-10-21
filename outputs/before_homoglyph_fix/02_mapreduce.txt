@@ -1,0 +1,8 @@
+﻿object s3://hh-lake/raw/it_vacancies_2024.csv: 847619384 bytes; splits: 13 x 64 MiB; mode=optimized; workers=4; reducers=4
+map: 9.36 s; shuffle+reduce: 0.44 s; total: 10.95 s
+строк прочитано мапперами: 229389 (данных 229388); вакансий варианта: 4356; с навыками: 3345
+пар (ключ, значение) от мапперов: 254801
+k=1: уникальных ключей 1164, сумма частот 22866; топ-3: [['c#', 2237], ['.net framework', 1130], ['asp.net', 1093]]
+k=2: уникальных ключей 17198, сумма частот 92865; топ-3: [['.net framework', 'c#', 793], ['asp.net', 'c#', 735], ['c#', 'git', 657]]
+k=3: уникальных ключей 114332, сумма частот 310903; топ-3: [['asp.net', 'c#', 'postgresql', 266], ['.net framework', 'asp.net', 'c#', 263], ['.net framework', 'c#', 'sql', 250]]
+результаты: s3://hh-lake/results/mapreduce/

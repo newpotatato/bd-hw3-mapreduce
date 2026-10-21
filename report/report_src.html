@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>ДЗ3 MapReduce и DuckDB - Черников К.М. J3310</title>
+<style>
+  @page { size: A4; margin: 12mm 12mm 12mm 15mm; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.2; color: #000; margin: 0; background: #fff; }
+  .title { text-align: center; margin: 0 0 6pt; }
+  .title .t1 { font-size: 14pt; font-weight: bold; }
+  h2 { font-size: 12.5pt; margin: 10pt 0 3pt; break-after: avoid; }
+  h3 { font-size: 11pt; margin: 6pt 0 2pt; break-after: avoid; }
+  p { margin: 0 0 3pt; text-align: justify; text-indent: 1.25em; }
+  p.ni { text-indent: 0; }
+  ul, ol { margin: 0 0 3pt; padding-left: 20pt; }
+  li { margin: 0; text-align: justify; }
+  pre { font-family: Consolas, "Courier New", monospace; font-size: 7.6pt; line-height: 1.15; background: #f4f4f4;
+        border: 0.5pt solid #ccc; padding: 3pt 5pt; margin: 2pt 0 4pt; white-space: pre-wrap; word-break: break-all; }
+  code { font-family: Consolas, "Courier New", monospace; font-size: 9.5pt; }
+  table { border-collapse: collapse; width: 100%; font-size: 9.5pt; margin: 2pt 0 5pt; break-inside: avoid; }
+  table.s { font-size: 8.6pt; }
+  th, td { border: 0.6pt solid #000; padding: 1.2pt 3pt; vertical-align: top; text-align: left; }
+  th { background: #eee; }
+  td.n { text-align: right; white-space: nowrap; }
+  .tcap { text-indent: 0; margin: 5pt 0 1pt; break-after: avoid; }
+  figure { margin: 4pt 0 6pt; break-inside: avoid; text-align: center; }
+  figure img { max-width: 100%; max-height: 150mm; border: 0.5pt solid #999; }
+  figcaption { font-size: 10pt; margin-top: 2pt; }
+  .ph { border: 1.2pt dashed #888; color: #666; padding: 18pt 6pt; font-size: 10pt; }
+  .calc { margin: 2pt 0 4pt 1.25em; text-indent: 0; }
+</style>
+</head>
+<body>
+
+<div class="title">
+  <div class="t1">Отчет по домашнему заданию № 3 «MapReduce и DuckDB»</div>
+  <div>Анализ навыков и зарплат по вакансиям IT</div>
+  <div>Выполнил: Черников Кирилл Михайлович, группа J3310, вариант 17: «4. Программист, разработчик на C# и .NET»</div>
+</div>
+
+<p class="ni"><b>Цель работы:</b> поднять объектное хранилище RustFS, загрузить в него датасет вакансий, посчитать частоты навыков, пар и троек навыков своего варианта двумя способами (свой MapReduce и DuckDB), сверить результаты, найти навыки, которые повышают и понижают зарплату, сравнить три региона и замерить время и память.</p>
+<p class="ni"><b>Окружение:</b> Windows 11, Docker Desktop, RustFS 1.0.1, Python 3.11, DuckDB 2.0.0, boto3, psutil. Код лежит в папке <code>src/</code>, полные выводы команд - в <code>outputs/</code>, результаты - в бакете <code>hh-lake</code> и в папке <code>results/</code>.</p>
+
+<!-- ============================================================== 1 -->
+<h2>1. Объектное хранилище</h2>
+<p>Хранилище RustFS поднято по схеме из домашнего задания № 2: один узел, 4 папки-диска, Erasure Coding 2+2 (<code>infra/docker-compose.yml</code>). Стенд от ДЗ № 2 к этому моменту не сохранился (тома Docker были очищены), поэтому я поднял его заново тем же compose-файлом. Запуск:</p>
+<pre>docker compose -f infra/docker-compose.yml up -d     # RustFS: S3 API localhost:9000, консоль localhost:9001</pre>
+<!--IMG:01_console_buckets.png|Рисунок 1 - Веб-консоль RustFS: бакет hh-lake-->
+
+<!-- ============================================================== 2 -->
+<h2>2. Загрузка данных</h2>
+<p>Датасет - снапшот вакансий hh.ru на середину 2024 года (<code>it_vacancies_2024.csv</code>, 847 619 384 байта, 229 388 вакансий, 23 колонки). Скрипт <code>src/upload.py</code> создает бакет <code>hh-lake</code> и загружает файл частями по 64 МиБ (multipart upload через boto3):</p>
+<!--OUT:01_upload.txt:1-5-->
+<p>Перед тем как резать файл на чанки, я проверил, нет ли в CSV полей с переводами строк внутри (например, в описании вакансии). Их нет: в файле 229 389 символов <code>\n</code> - ровно заголовок плюс 229 388 записей. Одна строка файла - одна вакансия, поэтому чанки можно резать по байтам, дочитывая последнюю строку, как это делает Hadoop.</p>
+<!--IMG:03_console_raw.png|Рисунок 2 - Объект raw/it_vacancies_2024.csv в бакете hh-lake-->
+
+<!-- ============================================================== 3 -->
+<h2>3. Условие варианта</h2>
+<p>В таблице вариантов указан сегмент «Программист, разработчик на C# и .NET», точного правила отбора нет, поэтому условие я составил сам по данным (скрипты <code>explore/</code>). В датасете есть колонка <code>role</code>, и ее значение «Программист, разработчик» совпадает с формулировкой варианта. Внутри роли вакансии C#/.NET отличаются по названию:</p>
+<pre>role = 'Программист, разработчик'
+AND regexp_matches(lower(name), '(c#|с#|\.net|dotnet)')     -- вторая «с#» написана кириллической буквой</pre>
+<p class="tcap">Таблица 1 - Сравнение вариантов условия</p>
+<table>
+  <tr><th>Условие</th><th>Вакансий</th><th>С навыками</th><th>С зарплатой в RUR</th></tr>
+  <tr><td><b>роль + C#/.NET в названии (латинская и кириллическая «с»)</b> - итоговое</td><td class="n"><b>4 356</b></td><td class="n"><b>3 345</b></td><td class="n"><b>1 446</b></td></tr>
+  <tr><td>то же, но только латинская «c»</td><td class="n">3 892</td><td class="n">2 990</td><td class="n">1 307</td></tr>
+  <tr><td>C#/.NET в названии, любая роль</td><td class="n">4 686</td><td class="n">3 596</td><td class="n">1 485</td></tr>
+</table>
+<p>Часть работодателей пишет «Программист С#» с русской буквой «С», и простое условие по <code>c#</code> теряет 464 вакансии (11%). Вакансии с другой ролью (тимлиды - 155, тестировщики - 140) я не беру, так как это другие профессии. Unity без упоминания C# тоже не беру - это отдельный сегмент (геймдев).</p>
+<p>Навыки нормализуются одинаково в обоих способах: нижний регистр, обрезка пробелов, без повторов внутри вакансии. В процессе выяснилось, что та же проблема с кириллицей есть и в самих навыках: <code>c#</code> и <code>с#</code> (613 вхождений кириллицей), <code>.net сore</code>, <code>с++</code>, <code>ci/сd</code>, <code>odatа</code> и т.д. Поэтому добавлено правило: если в навыке из русских букв есть только буквы-двойники латиницы (а, с, е, о, р, х, к, у), они заменяются на латинские. Настоящие русские навыки («ооп», «работа в команде») содержат и другие буквы и не меняются. После этого <code>c#</code> вырос с 2 237 до 2 813 вхождений.</p>
+
+<!-- ============================================================== 4 -->
+<h2>4. Свой MapReduce</h2>
+<p>Реализация - <code>src/mapreduce.py</code>, процессы Python (<code>ProcessPoolExecutor</code>):</p>
+<ol>
+  <li>Мастер узнает размер объекта (<code>head_object</code>) и делит его на сплиты по 64 МиБ - 13 map-задач.</li>
+  <li>Маппер читает свой сплит из S3 запросом <code>Range: bytes=start-end</code>. Граница - как в Hadoop: строка принадлежит сплиту, в котором она начинается. Маппер пропускает обрывок строки в начале сплита и дочитывает свою последнюю строку за его концом.</li>
+  <li>Маппер отбирает вакансии варианта, нормализует навыки и для каждой вакансии выдает все сочетания навыков размера 1, 2 и 3. Комбайнер суммирует их прямо в маппере (<code>Counter</code>).</li>
+  <li>При shuffle ключ попадает к редьюсеру номер <code>crc32(ключ) mod 4</code>, редьюсеры (4 процесса) суммируют частоты.</li>
+  <li>Результаты для трех размеров сочетаний записываются в <code>s3://hh-lake/results/mapreduce/</code>: <code>skills_k1.csv</code>, <code>pairs_k2.csv</code>, <code>triples_k3.csv</code> и <code>summary.json</code>.</li>
+</ol>
+<!--OUT:02_mapreduce.txt:1-8-->
+<p>Мапперы вместе прочитали ровно 229 389 строк, то есть каждая строка файла обработана один раз и на стыках сплитов ничего не потерялось и не задвоилось. Для проверки стыков я также запустил расчет с неудобным размером сплита 7 МиБ (116 сплитов): результат совпал побайтно (<code>outputs/05b_chunk7.txt</code>).</p>
+<!--IMG:term_mr.png|Рисунок 3 - Запуск MapReduce (режим stream, 4 маппера)-->
+<!--IMG:05_console_results_mapreduce.png|Рисунок 4 - Результаты MapReduce для трех размеров сочетаний в hh-lake-->
+
+<h3>4.1. Отказ маппера</h3>
+<p>Флаг <code>--fail-task 3</code> заставляет маппер № 3 упасть на первой попытке. Мастер ловит ошибку и перезапускает задачу (до 3 попыток). Так как map-задача читает свой диапазон байтов заново и не имеет побочных эффектов, повторный запуск дает тот же результат - файлы совпали побайтно (SHA-256):</p>
+<!--OUT:05_fail_mapper.txt:1-10-->
+<!--IMG:term_fail.png|Рисунок 5 - Тест отказа маппера-->
+
+<!-- ============================================================== 5 -->
+<h2>5. DuckDB</h2>
+<p>Второй способ - <code>src/duckdb_skills.py</code>. DuckDB читает тот же объект прямо из RustFS через расширение <code>httpfs</code> (S3 secret с endpoint <code>localhost:9000</code>), условие варианта и нормализация навыков написаны на SQL. Пары и тройки получаются самосоединением таблицы навыков с условием <code>a.skill &lt; b.skill &lt; c.skill</code>, чтобы каждое сочетание считалось один раз:</p>
+<pre>CREATE TEMP TABLE skills AS
+WITH v AS (SELECT vacancy_id, key_skills
+           FROM read_csv('s3://hh-lake/raw/it_vacancies_2024.csv', header = true, all_varchar = true)
+           WHERE role = 'Программист, разработчик' AND regexp_matches(lower(name), '(c#|с#|\.net|dotnet)'))
+SELECT DISTINCT vacancy_id, &lt;нормализация навыка&gt; AS skill
+FROM v, unnest(string_split(coalesce(key_skills, ''), ';')) AS t(s) WHERE lower(trim(s)) &lt;&gt; '';
+
+SELECT a.skill, b.skill, c.skill, count(*) FROM skills a
+JOIN skills b ON a.vacancy_id = b.vacancy_id AND a.skill &lt; b.skill
+JOIN skills c ON b.vacancy_id = c.vacancy_id AND b.skill &lt; c.skill
+GROUP BY ALL;                       -- тройки; пары и навыки - аналогично</pre>
+<!--OUT:03_duckdb.txt:1-7-->
+<!--IMG:term_duckdb.png|Рисунок 6 - Запуск DuckDB-->
+
+<!-- ============================================================== 6 -->
+<h2>6. Сверка результатов</h2>
+<p>Скрипт <code>src/verify.py</code> скачивает оба набора результатов из <code>hh-lake</code> и сравнивает каждую строку: какие ключи есть только в одном наборе и у каких ключей разные числа. Расхождений нет ни на одном уровне:</p>
+<!--OUT:04_verify.txt:1-5-->
+<p class="tcap">Таблица 2 - Контрольные числа</p>
+<table>
+  <tr><th>Показатель</th><th>MapReduce</th><th>DuckDB</th></tr>
+  <tr><td>вакансий варианта / с навыками</td><td class="n">4 356 / 3 345</td><td class="n">4 356 / 3 345</td></tr>
+  <tr><td>уникальных навыков / пар / троек</td><td class="n">1 156 / 16 920 / 112 376</td><td class="n">1 156 / 16 920 / 112 376</td></tr>
+  <tr><td>сумма частот навыков / пар / троек</td><td class="n">22 829 / 92 551 / 309 607</td><td class="n">22 829 / 92 551 / 309 607</td></tr>
+  <tr><td>топ-1 навык / пара / тройка</td><td>c# 2 813; .net framework + c# 1 003; asp.net + c# + postgresql 352</td><td>те же</td></tr>
+</table>
+<!--IMG:term_verify.png|Рисунок 7 - Построчная сверка MapReduce и DuckDB-->
+
+<h3>6.1. Почему пар и троек так много</h3>
+<p>Уникальных навыков 1 156, пар уже в 15 раз больше, а троек - почти в 100 раз. Причина в числе сочетаний внутри одной вакансии: вакансия с n навыками дает n навыков, C(n,2) = n*(n-1)/2 пар и C(n,3) = n*(n-1)*(n-2)/6 троек. Это проверено точно: сумма C(n,2) по всем вакансиям совпадает с суммой частот пар, а сумма C(n,3) - с суммой частот троек:</p>
+<!--OUT:04_verify.txt:7-9-->
+<p>Медиана - 6 навыков на вакансию (15 пар, 20 троек), но рост дают «длинные» вакансии: две вакансии с 30 навыками дают по 4 060 троек каждая, это больше, чем все 341 вакансия с 3 навыками вместе. Число уникальных сочетаний тоже растет, потому что редкие навыки образуют много редких сочетаний: 112 376 разных троек при 309 607 вхождениях, то есть большинство троек встречается 1-3 раза.</p>
+
+<!-- ============================================================== 7 -->
+<h2>7. Профилирование и оптимизация (бонус)</h2>
+<p>Скрипт <code>src/profile_runs.py</code> запускает каждую конфигурацию отдельным процессом 3 раза. Время меряется по часам, пик памяти - как максимум суммарного RSS всего дерева процессов (мастер плюс мапперы), снимается каждые 25 мс через psutil. Сравнивались три версии MapReduce:</p>
+<ul>
+  <li><code>naive</code> («до»): маппер разбирает каждую строку файла как CSV и выдает пары (ключ, 1) без комбайнера, shuffle - сортировка всех пар, один редьюсер;</li>
+  <li><code>optimized</code>: дешевый предфильтр строки до разбора CSV, комбайнер в маппере, hash-партиционирование;</li>
+  <li><code>stream</code> («после»): сплит читается из S3 потоком по 1 МиБ, строки отбираются по сырым байтам до декодирования, в строку Python превращаются только около 2% строк.</li>
+</ul>
+<!--OUT:08_profile.txt:20-26-->
+<!--OUT:08b_profile_w8.txt:6-->
+<p class="tcap">Таблица 3 - Время и память (3 запуска, медиана)</p>
+<table>
+  <tr><th>Конфигурация</th><th>Время, с (мин / медиана / макс)</th><th>Пик памяти, МиБ</th></tr>
+  <tr><td>MapReduce naive, 1 процесс («до»)</td><td class="n">24,38 / 24,43 / 25,10</td><td class="n">473</td></tr>
+  <tr><td>MapReduce optimized, 1 процесс</td><td class="n">19,54 / 23,86 / 25,97</td><td class="n">436</td></tr>
+  <tr><td>MapReduce optimized, 4 процесса</td><td class="n">13,46 / 13,75 / 14,59</td><td class="n">1 263</td></tr>
+  <tr><td>MapReduce stream, 1 процесс</td><td class="n">23,42 / 26,74 / 28,15</td><td class="n">196</td></tr>
+  <tr><td><b>MapReduce stream, 4 процесса («после»)</b></td><td class="n"><b>11,68 / 12,04 / 17,61</b></td><td class="n"><b>385</b></td></tr>
+  <tr><td>MapReduce stream, 8 процессов</td><td class="n">10,80 / 11,07 / 12,08</td><td class="n">616</td></tr>
+  <tr><td>DuckDB</td><td class="n">6,81 / 6,81 / 9,20</td><td class="n">1 270</td></tr>
+</table>
+<p>Больше всего оптимизация повлияла на память. Версии naive и optimized загружают весь сплит 64 МиБ в память, переводят его в строку Python и режут на список строк - около 430 МиБ на процесс. Нужны из них только 2% строк. Потоковое чтение снизило пик в 1 процессе с 473 до 196 МиБ (-59%), а при 4 процессах - с 1 263 до 385 МиБ (-70%) по сравнению с optimized.</p>
+<p>По времени в одном процессе все версии работают примерно одинаково, 24-27 с. Это скорость чтения 848 МБ из RustFS одним потоком - около 35 МБ/с, и задача упирается в чтение данных. Время сокращает только параллельное чтение: 4 маппера - 12,0 с (в 2 раза быстрее, чем «до»). При 8 мапперах выигрыш почти пропал (11,1 с), а память выросла - упираемся в пропускную способность одного узла RustFS, у которого все 4 диска лежат на одном физическом диске.</p>
+<p>До оптимизации было 24,4 с и 473 МиБ, после - 12,0 с и 385 МиБ, а файлы результатов совпадают побайтно. DuckDB быстрее в 1,8 раза (6,8 с), но использует 1,27 ГиБ: он читает файл несколькими параллельными запросами и разбирает CSV векторно на C++, держа данные в своем буфере. MapReduce на Python экономнее по памяти. DuckDB быстрее, и кода для него нужно меньше: один SQL-запрос вместо своего планировщика.</p>
+<!--IMG:term_profile.png|Рисунок 8 - Профилирование: 3 запуска каждой конфигурации-->
+
+<!-- ============================================================== 8 -->
+<h2>8. Навыки и зарплата</h2>
+<p>Код - <code>src/salary_analysis.py</code>. Зарплата вакансии: только рубли, середина вилки «от-до» или одна указанная граница; если зарплата указана до вычета налога (gross), она умножается на 0,87, чтобы все было «на руки»; значения вне 15 000 - 1 000 000 ₽ отброшены. Прибавка пары считается от медианы <b>более частого</b> навыка пары (то есть это прибавка от добавления менее частого навыка), прибавка тройки - от медианы самой частой из трех входящих в нее пар. В рейтинг попадают пары, встречающиеся не меньше 25 раз, и тройки - не меньше 20 раз.</p>
+<h3>8.1. Ловушка: массовые публикации</h3>
+<p>Первая версия расчета выдала странный результат: у всех лучших пар медиана ровно 300 000 ₽, и почти все они связаны с ООП (SOLID + ООП, DDD + ООП, Clean Architecture + ООП). Проверка показала, что 35 из 62 вакансий с парой SOLID + ООП разместил один работодатель (employer_id 1136961) с одинаковой вилкой 280-350 тыс. и всего двумя разными названиями - это одна вакансия, опубликованная во многих городах. У DDD + ООП 38 вакансий приходятся всего на 3 работодателей:</p>
+<!--OUT:06a_salary_naive.txt:5-10-->
+<p>Поэтому в итоговом расчете одинаковые вакансии одного работодателя (то же название, зарплата и навыки) считаются один раз (было 1 442 вакансии, стало 1 071), а сочетание должно встречаться минимум у 10 разных работодателей для пар и у 8 - для троек. Общая медиана по варианту - 160 000 ₽.</p>
+
+<h3>8.2. Итоговые таблицы</h3>
+<p class="tcap">Таблица 4 - Пары, которые сильнее всего повышают медиану</p>
+<table class="s">
+  <tr><th>Пара</th><th>n</th><th>Работ.</th><th>Медиана</th><th>База (более частый)</th><th>n базы</th><th>Медиана базы</th><th>Прибавка</th></tr>
+  <tr><td>.net core + mongodb</td><td class="n">34</td><td class="n">13</td><td class="n">300 000</td><td>.net core</td><td class="n">212</td><td class="n">200 000</td><td class="n">+100 000 (+50%)</td></tr>
+  <tr><td>c# + kubernetes</td><td class="n">35</td><td class="n">26</td><td class="n">250 000</td><td>c#</td><td class="n">781</td><td class="n">160 000</td><td class="n">+90 000 (+56%)</td></tr>
+  <tr><td>c# + ci/cd</td><td class="n">25</td><td class="n">15</td><td class="n">250 000</td><td>c#</td><td class="n">781</td><td class="n">160 000</td><td class="n">+90 000 (+56%)</td></tr>
+  <tr><td>ms sql + rabbitmq</td><td class="n">28</td><td class="n">15</td><td class="n">255 500</td><td>ms sql</td><td class="n">194</td><td class="n">174 000</td><td class="n">+81 500 (+47%)</td></tr>
+  <tr><td>mongodb + ms sql</td><td class="n">27</td><td class="n">14</td><td class="n">250 000</td><td>ms sql</td><td class="n">194</td><td class="n">174 000</td><td class="n">+76 000 (+44%)</td></tr>
+  <tr><td>entity framework + rabbitmq</td><td class="n">38</td><td class="n">29</td><td class="n">252 500</td><td>entity framework</td><td class="n">160</td><td class="n">180 000</td><td class="n">+72 500 (+40%)</td></tr>
+  <tr><td>kubernetes + postgresql</td><td class="n">27</td><td class="n">21</td><td class="n">275 000</td><td>postgresql</td><td class="n">278</td><td class="n">202 500</td><td class="n">+72 500 (+36%)</td></tr>
+  <tr><td>docker + entity framework</td><td class="n">37</td><td class="n">27</td><td class="n">250 000</td><td>entity framework</td><td class="n">160</td><td class="n">180 000</td><td class="n">+70 000 (+39%)</td></tr>
+  <tr><td>c# + mongodb</td><td class="n">65</td><td class="n">29</td><td class="n">225 000</td><td>c#</td><td class="n">781</td><td class="n">160 000</td><td class="n">+65 000 (+41%)</td></tr>
+  <tr><td>c# + kafka</td><td class="n">37</td><td class="n">25</td><td class="n">225 000</td><td>c#</td><td class="n">781</td><td class="n">160 000</td><td class="n">+65 000 (+41%)</td></tr>
+</table>
+<p class="tcap">Таблица 5 - Пары, которые сильнее всего понижают медиану</p>
+<table class="s">
+  <tr><th>Пара</th><th>n</th><th>Работ.</th><th>Медиана</th><th>База (более частый)</th><th>n базы</th><th>Медиана базы</th><th>Прибавка</th></tr>
+  <tr><td>css + html</td><td class="n">42</td><td class="n">32</td><td class="n">83 500</td><td>html</td><td class="n">73</td><td class="n">150 000</td><td class="n">-66 500 (-44%)</td></tr>
+  <tr><td>c# + ms visual studio</td><td class="n">55</td><td class="n">41</td><td class="n">100 000</td><td>c#</td><td class="n">781</td><td class="n">160 000</td><td class="n">-60 000 (-38%)</td></tr>
+  <tr><td>c# + unity</td><td class="n">45</td><td class="n">37</td><td class="n">100 000</td><td>c#</td><td class="n">781</td><td class="n">160 000</td><td class="n">-60 000 (-38%)</td></tr>
+  <tr><td>javascript + postgresql</td><td class="n">31</td><td class="n">25</td><td class="n">150 000</td><td>postgresql</td><td class="n">278</td><td class="n">202 500</td><td class="n">-52 500 (-26%)</td></tr>
+  <tr><td>ms sql + ооп</td><td class="n">33</td><td class="n">22</td><td class="n">121 800</td><td>ms sql</td><td class="n">194</td><td class="n">174 000</td><td class="n">-52 200 (-30%)</td></tr>
+  <tr><td>css + javascript</td><td class="n">35</td><td class="n">25</td><td class="n">100 000</td><td>javascript</td><td class="n">132</td><td class="n">150 000</td><td class="n">-50 000 (-33%)</td></tr>
+  <tr><td>.net core + javascript</td><td class="n">31</td><td class="n">29</td><td class="n">150 000</td><td>.net core</td><td class="n">212</td><td class="n">200 000</td><td class="n">-50 000 (-25%)</td></tr>
+  <tr><td>c# + c++</td><td class="n">34</td><td class="n">23</td><td class="n">115 000</td><td>c#</td><td class="n">781</td><td class="n">160 000</td><td class="n">-45 000 (-28%)</td></tr>
+  <tr><td>.net framework + ms visual studio</td><td class="n">28</td><td class="n">22</td><td class="n">120 900</td><td>.net framework</td><td class="n">301</td><td class="n">165 000</td><td class="n">-44 100 (-27%)</td></tr>
+</table>
+<p class="tcap">Таблица 6 - Тройки: база - самая частая пара внутри тройки, прибавка - от третьего навыка</p>
+<table class="s">
+  <tr><th>Тройка</th><th>n</th><th>Работ.</th><th>Медиана</th><th>База (самая частая пара)</th><th>n базы</th><th>Медиана базы</th><th>+ навык</th><th>Прибавка</th></tr>
+  <tr><th colspan="9">повышают</th></tr>
+  <tr><td>.net core + asp.net + ms sql</td><td class="n">26</td><td class="n">13</td><td class="n">280 500</td><td>asp.net + ms sql</td><td class="n">82</td><td class="n">155 000</td><td>.net core</td><td class="n">+125 500</td></tr>
+  <tr><td>.net core + c# + mongodb</td><td class="n">30</td><td class="n">10</td><td class="n">300 000</td><td>.net core + c#</td><td class="n">185</td><td class="n">191 400</td><td>mongodb</td><td class="n">+108 600</td></tr>
+  <tr><td>c# + mongodb + ms sql</td><td class="n">23</td><td class="n">11</td><td class="n">275 000</td><td>c# + ms sql</td><td class="n">177</td><td class="n">174 000</td><td>mongodb</td><td class="n">+101 000</td></tr>
+  <tr><td>asp.net + entity framework + rabbitmq</td><td class="n">24</td><td class="n">18</td><td class="n">250 000</td><td>asp.net + entity framework</td><td class="n">86</td><td class="n">160 000</td><td>rabbitmq</td><td class="n">+90 000</td></tr>
+  <tr><td>c# + ms sql + rabbitmq</td><td class="n">25</td><td class="n">13</td><td class="n">261 000</td><td>c# + ms sql</td><td class="n">177</td><td class="n">174 000</td><td>rabbitmq</td><td class="n">+87 000</td></tr>
+  <tr><td>c# + kubernetes + postgresql</td><td class="n">24</td><td class="n">18</td><td class="n">268 000</td><td>c# + postgresql</td><td class="n">244</td><td class="n">200 000</td><td>kubernetes</td><td class="n">+68 000</td></tr>
+  <tr><th colspan="9">понижают</th></tr>
+  <tr><td>css + html + javascript</td><td class="n">29</td><td class="n">21</td><td class="n">80 000</td><td>html + javascript</td><td class="n">49</td><td class="n">150 000</td><td>css</td><td class="n">-70 000</td></tr>
+  <tr><td>.net core + .net framework + postgresql</td><td class="n">21</td><td class="n">18</td><td class="n">180 000</td><td>.net core + postgresql</td><td class="n">100</td><td class="n">250 000</td><td>.net framework</td><td class="n">-70 000</td></tr>
+  <tr><td>c# + css + html</td><td class="n">38</td><td class="n">28</td><td class="n">83 500</td><td>c# + html</td><td class="n">68</td><td class="n">150 000</td><td>css</td><td class="n">-66 500</td></tr>
+  <tr><td>c# + git + html</td><td class="n">21</td><td class="n">17</td><td class="n">87 000</td><td>c# + git</td><td class="n">248</td><td class="n">153 300</td><td>html</td><td class="n">-66 300</td></tr>
+  <tr><td>c# + javascript + postgresql</td><td class="n">24</td><td class="n">21</td><td class="n">144 600</td><td>c# + postgresql</td><td class="n">244</td><td class="n">200 000</td><td>javascript</td><td class="n">-55 400</td></tr>
+  <tr><td>c# + ms sql + ооп</td><td class="n">30</td><td class="n">19</td><td class="n">125 900</td><td>c# + ms sql</td><td class="n">177</td><td class="n">174 000</td><td>ооп</td><td class="n">-48 100</td></tr>
+</table>
+<p>Повышают зарплату навыки инфраструктуры нагруженного бэкенда: MongoDB, Kubernetes, CI/CD, RabbitMQ, Kafka, Docker. Медиана у вакансий с C# 160 тыс. Если к C# добавляется Kubernetes или CI/CD, медиана 250 тыс. Такие требования пишут в вакансиях для микросервисов и высоких нагрузок, где нужен опыт уровня middle+ и senior. Тот же смысл у троек: .NET Core к связке ASP.NET + MS SQL добавляет 125 тыс. - это переход со старого .NET Framework на современный стек.</p>
+<p>Понижают зарплату навыки, которые указывают на более простые или специфичные позиции:</p>
+<ul>
+  <li>CSS, HTML и JavaScript (до -44%) - это вакансии fullstack в небольших компаниях и стажерские позиции, где C#-разработчик еще и верстает;</li>
+  <li>MS Visual Studio (-38%) - указание IDE в навыках типично для вакансий начального уровня и десктопной разработки; опытному разработчику IDE в требованиях не пишут;</li>
+  <li>Unity (-38%) - геймдев традиционно платит меньше бизнес-разработки;</li>
+  <li>C++ (-28%) - промышленные и встраиваемые системы, где C# - вспомогательный язык;</li>
+  <li>ООП как отдельный навык (-28% и -30%) - базовое знание, которое отдельно требуют в вакансиях для начинающих;</li>
+  <li>.NET Framework рядом с .NET Core и PostgreSQL (-28%) - поддержка старого кода (легаси).</li>
+</ul>
+<p>Скорее всего, такие навыки просто показывают, какого уровня позиция. По этим данным нельзя сказать, что навык сам меняет зарплату.</p>
+
+<!-- ============================================================== 9 -->
+<h2>9. Региональный анализ</h2>
+<p>Для сравнения я взял Москву и Санкт-Петербург - два главных рынка IT - и Самару, мой родной город, чтобы понять, как выглядит рынок C#/.NET в регионе по сравнению со столицами. В Самаре всего 69 вакансий и только 16 с зарплатой, поэтому выводы по ней ориентировочные. Код - <code>src/regions.py</code>, зарплаты считаются так же, как в разделе 8 (без дублей).</p>
+<p class="tcap">Таблица 7 - Рынок и зарплаты</p>
+<table class="s">
+  <tr><th>Показатель</th><th>Москва</th><th>Санкт-Петербург</th><th>Самара</th><th>Вся Россия</th></tr>
+  <tr><td>вакансий (доля от всех вакансий варианта)</td><td class="n">1 848 (42,4%)</td><td class="n">554 (12,7%)</td><td class="n">69 (1,6%)</td><td class="n">4 356</td></tr>
+  <tr><td>работодателей</td><td class="n">710</td><td class="n">251</td><td class="n">42</td><td class="n">1 416</td></tr>
+  <tr><td>опыт: нет опыта / 1-3 года / 3-6 лет / более 6</td><td class="n">2,8 / 23,4 / 62,8 / 11,0%</td><td class="n">3,4 / 28,5 / 57,4 / 10,6%</td><td class="n">8,7 / 44,9 / 39,1 / 7,2%</td><td class="n">4,9 / 33,0 / 53,7 / 8,4%</td></tr>
+  <tr><td>удаленная работа</td><td class="n">45,7%</td><td class="n">33,9%</td><td class="n">29,0%</td><td class="n">37,8%</td></tr>
+  <tr><td>вакансий с зарплатой (без дублей)</td><td class="n">434</td><td class="n">146</td><td class="n">16</td><td class="n">1 071</td></tr>
+  <tr><td><b>медиана зарплаты, ₽</b></td><td class="n"><b>217 500</b></td><td class="n"><b>180 000</b></td><td class="n"><b>98 750</b></td><td class="n"><b>160 000</b></td></tr>
+  <tr><td>25-й / 75-й перцентиль, ₽</td><td class="n">160 000 / 275 000</td><td class="n">120 000 / 250 000</td><td class="n">70 000 / 125 062</td><td class="n">100 000 / 241 800</td></tr>
+  <tr><td>медиана, опыт 1-3 года / 3-6 лет, ₽</td><td class="n">150 000 / 240 000</td><td class="n">120 000 / 205 000</td><td class="n">98 750 / -</td><td class="n">120 000 / 200 000</td></tr>
+  <tr><td>медиана: удаленка (вакансий) / офис, ₽</td><td class="n">225 000 (237) / 200 000</td><td class="n">225 000 (60) / 165 150</td><td class="n">304 500 (1) / 97 500</td><td class="n">209 400 (402) / 143 550</td></tr>
+</table>
+<p class="tcap">Таблица 8 - Востребованность навыков (доля вакансий региона с указанными навыками)</p>
+<table class="s">
+  <tr><th></th><th>Москва (1 378 вакансий с навыками)</th><th>Санкт-Петербург (421)</th><th>Самара (58)</th></tr>
+  <tr><td>навыки</td><td>c# 82%, asp.net 34%, postgresql 33%, .net framework 32%, sql 25%, git 25%, .net core 24%, ms sql 20%, docker 15%</td><td>c# 84%, .net framework 34%, postgresql 29%, asp.net 29%, sql 29%, .net core 23%, git 20%, ms sql 19%, rabbitmq 18%</td><td>c# 79%, .net framework 38%, .net core 31%, ms sql 31%, asp.net 29%, postgresql 28%, git 26%, sql 22%, javascript 17%</td></tr>
+  <tr><td>пары</td><td>.net framework + c# 28%, c# + postgresql 28%, asp.net + c# 26%, c# + git 22%, c# + sql 22%</td><td>.net framework + c# 30%, c# + sql 27%, asp.net + c# 24%, c# + postgresql 23%, .net core + c# 19%</td><td>.net framework + c# 34%, .net core + c# 31%, c# + ms sql 29%, c# + git 24%, c# + postgresql 22%</td></tr>
+  <tr><td>тройки</td><td>asp.net + c# + postgresql 11%, c# + git + postgresql 9%, .net framework + c# + git 9%</td><td>.net framework + c# + sql 11%, .net framework + c# + postgresql 10%, c# + postgresql + sql 10%</td><td>.net framework + c# + ms sql 19%, .net core + c# + git 17%, .net core + c# + postgresql 14%</td></tr>
+  <tr><td>отличительные навыки (доля в регионе / доля по России)</td><td>signalr x2,3; k8s x2,3; prometheus x2,2; cqrs x1,9</td><td>avalonia x3,8; autodesk revit x3,4; .net 6 x3,0; design patterns x2,3</td><td>orm x4,9; субд x3,0; angular x2,4; ms sql x1,5</td></tr>
+</table>
+<p class="tcap">Таблица 9 - Медиана зарплаты по ключевым навыкам, ₽ (в скобках - число вакансий)</p>
+<table class="s">
+  <tr><th>Навык</th><th>Москва</th><th>Санкт-Петербург</th><th>Самара</th><th>Вся Россия</th></tr>
+  <tr><td>c#</td><td class="n">208 800 (314)</td><td class="n">180 000 (114)</td><td class="n">100 000 (11)</td><td class="n">160 000 (781)</td></tr>
+  <tr><td>.net core</td><td class="n">250 000 (105)</td><td class="n">200 000 (27)</td><td class="n">158 000 (4)</td><td class="n">200 000 (212)</td></tr>
+  <tr><td>.net framework</td><td class="n">217 500 (111)</td><td class="n">180 000 (43)</td><td class="n">107 500 (6)</td><td class="n">165 000 (301)</td></tr>
+  <tr><td>postgresql</td><td class="n">245 000 (135)</td><td class="n">202 500 (34)</td><td class="n">170 500 (4)</td><td class="n">202 500 (278)</td></tr>
+  <tr><td>ms sql</td><td class="n">220 000 (83)</td><td class="n">220 000 (27)</td><td class="n">117 450 (7)</td><td class="n">174 000 (194)</td></tr>
+  <tr><td>docker</td><td class="n">250 000 (62)</td><td class="n">170 000 (15)</td><td class="n">- (0)</td><td class="n">205 000 (105)</td></tr>
+  <tr><td>kubernetes</td><td class="n">280 000 (29)</td><td class="n">250 000 (3)</td><td class="n">- (0)</td><td class="n">255 500 (40)</td></tr>
+  <tr><td>javascript</td><td class="n">180 000 (51)</td><td class="n">150 000 (20)</td><td class="n">55 000 (3)</td><td class="n">150 000 (132)</td></tr>
+</table>
+<p>Москва - почти половина рынка (42% всех вакансий C#/.NET) и самые высокие зарплаты: медиана 217,5 тыс., на 36% выше общей. Рынок ориентирован на опытных разработчиков (63% вакансий - опыт 3-6 лет), а отличительные навыки - SignalR, Kubernetes, Prometheus, CQRS - это облачный и нагруженный бэкенд. Docker и Kubernetes в Москве встречаются чаще и оплачиваются лучше (250-280 тыс.).</p>
+<p>Петербург дешевле Москвы на 17% (медиана 180 тыс.), здесь чаще встречается .NET Framework, а отличительные навыки - Avalonia (кроссплатформенный десктоп), Autodesk Revit (плагины для программ инженерного проектирования), .NET 6. Это продуктовые компании, которые делают настольные и инженерные программы.</p>
+<p>В Самаре медиана 98,8 тыс., на 55% ниже Москвы, почти половина вакансий для опыта 1-3 года, а вакансий без опыта втрое больше, чем в Москве (8,7% против 2,8%). Стек - корпоративные веб-системы: .NET + MS SQL + ORM + Angular. По Docker и Kubernetes в Самаре нет ни одной вакансии с зарплатой. Это в основном рынок для начинающих.</p>
+<p>У удаленных вакансий в Москве и Петербурге одинаковая медиана 225 тыс., в офисе разница 35 тыс. Работодателю неважно, где живет удаленный разработчик, поэтому для разработчика из Самары удаленная работа на московскую компанию - способ получать в 2 с лишним раза больше местной медианы. (Медиана удаленки в самой Самаре - 304,5 тыс., но это одна вакансия, по ней вывод делать нельзя.)</p>
+<p>Вакансий на одного работодателя по России 3,08, а в Самаре 1,64: в регионах меньше крупных компаний, которые публикуют вакансию сразу во многих городах (как работодатель из раздела 8.1).</p>
+
+<!-- ============================================================== 10 -->
+<h2>Выводы</h2>
+<p>MapReduce и DuckDB дали одинаковый результат на всех трех уровнях. Пар и троек получилось намного больше, чем навыков, потому что вакансия с n навыками дает n*(n-1)/2 пар и еще больше троек, а несколько вакансий с 25-30 навыками дают тысячи сочетаний.</p>
+<p>Была проблема с буквой «С». Часть работодателей пишет «С#» русской буквой «С», на экране она выглядит так же, как латинская «C». Из-за этого условие по «c#» сначала теряло 464 вакансии (11% варианта), а в навыках «c#» и «с#» считались двумя разными навыками: кириллическая версия встречалась 613 раз. Такие же «двойники» нашлись у «.net сore», «с++», «ci/сd» и других. Я заметил это только тогда, когда в списке навыков оказалось два одинаковых на вид «c#». После исправления «c#» вырос с 2 237 до 2 813 вхождений. MapReduce и DuckDB совпадали и до исправления, потому что оба считали одинаково неправильно. Так что совпадение двух способов не защищает от ошибки в самих данных.</p>
+<p>По профилированию видно, что мой MapReduce упирается в скорость чтения из хранилища, поэтому время сокращается только за счет параллельных мапперов. Потоковое чтение в основном помогло с памятью: при 4 мапперах пик снизился с 1 263 до 385 МиБ. В сумме с распараллеливанием время сократилось с 24,4 до 12,0 с, а память с 473 до 385 МиБ. DuckDB быстрее (6,8 с), потому что читает файл параллельно и разбирает CSV на C++. Памяти он использует больше, 1,27 ГиБ.</p>
+<p>Больше всего платят в вакансиях, где нужен опыт с инфраструктурой (MongoDB, Kubernetes, очереди сообщений). Меньше платят там, где C#-разработчик еще и верстает или работает с Unity. Москва платит больше всех, у удаленных вакансий медиана в Москве и Петербурге одинаковая.</p>
+
+</body>
+</html>

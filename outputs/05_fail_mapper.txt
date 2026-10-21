@@ -1,0 +1,10 @@
+﻿> python src/mapreduce.py --workers 4 --fail-task 3 --out-prefix mapreduce_failtest
+object s3://hh-lake/raw/it_vacancies_2024.csv: 847619384 bytes; splits: 13 x 64 MiB; mode=optimized; workers=4; reducers=4
+  map task 3: ОТКАЗ на попытке 1: имитация сбоя маппера 3 (попытка 1)
+  map task 3: успешно с попытки 2
+map: 7.86 s; shuffle+reduce: 0.54 s; total: 10.49 s
+
+> сравнение результатов с обычным запуском (SHA-256 файлов)
+skills_k1.csv    обычный 6494D84687724CCA  с отказом 6494D84687724CCA  совпадает: True
+pairs_k2.csv     обычный 17F0BC26B0CE33D6  с отказом 17F0BC26B0CE33D6  совпадает: True
+triples_k3.csv   обычный DF05762386EF5336  с отказом DF05762386EF5336  совпадает: True

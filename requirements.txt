@@ -1,0 +1,3 @@
+duckdb>=1.1
+boto3>=1.34
+psutil>=5.9

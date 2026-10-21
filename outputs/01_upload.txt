@@ -1,0 +1,5 @@
+﻿bucket hh-lake: создан
+upload it_vacancies_2024.csv -> s3://hh-lake/raw/it_vacancies_2024.csv: 11.5 s
+head_object: ContentLength=847619384, ETag="0e6d21890db664d9bf83e1427665b106-13", LastModified=2026-10-21 17:51:00+00:00
+локальный размер: 847619384
+  s3://hh-lake/raw/it_vacancies_2024.csv  847619384

@@ -1,0 +1,44 @@
+# RustFS из ДЗ №2: один узел, 4 папки-диска (Erasure Coding 2+2), S3 API на :9000, консоль на :9001.
+# Запуск: docker compose -f infra/docker-compose.yml up -d
+name: hw3
+
+services:
+  # тома создаются от root, а rustfs работает от пользователя 10001 - выдаем права один раз
+  init-perms:
+    image: rustfs/rustfs:1.0.1
+    user: "0:0"
+    entrypoint: ["chown", "-R", "10001:10001", "/data/rustfs0", "/data/rustfs1", "/data/rustfs2", "/data/rustfs3"]
+    volumes:
+      - disk0:/data/rustfs0
+      - disk1:/data/rustfs1
+      - disk2:/data/rustfs2
+      - disk3:/data/rustfs3
+
+  rustfs:
+    image: rustfs/rustfs:1.0.1
+    container_name: rustfs
+    depends_on:
+      init-perms:
+        condition: service_completed_successfully
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      RUSTFS_VOLUMES: /data/rustfs{0...3}
+      RUSTFS_ACCESS_KEY: chernikov
+      RUSTFS_SECRET_KEY: chernikov-j3310
+      RUSTFS_CONSOLE_ENABLE: "true"
+      # все 4 тома на одном физическом диске ПК - для учебного стенда отключаем проверку
+      RUSTFS_UNSAFE_BYPASS_DISK_CHECK: "true"
+    volumes:
+      - disk0:/data/rustfs0
+      - disk1:/data/rustfs1
+      - disk2:/data/rustfs2
+      - disk3:/data/rustfs3
+    restart: "no"
+
+volumes:
+  disk0:
+  disk1:
+  disk2:
+  disk3:

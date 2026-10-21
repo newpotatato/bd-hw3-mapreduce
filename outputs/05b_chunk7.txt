@@ -1,0 +1,12 @@
+﻿> python src/mapreduce.py --mode stream --workers 4 --chunk-mb 7 --out-prefix mapreduce_chunk7
+object s3://hh-lake/raw/it_vacancies_2024.csv: 847619384 bytes; splits: 116 x 7 MiB; mode=stream; workers=4; reducers=4
+map: 8.81 s; shuffle+reduce: 0.51 s; total: 10.18 s
+строк прочитано мапперами: 229389 (данных 229388); вакансий варианта: 4356; с навыками: 3345
+пар (ключ, значение) от мапперов: 348324
+k=1: уникальных ключей 1156, сумма частот 22829; топ-3: [['c#', 2813], ['.net framework', 1130], ['asp.net', 1093]]
+k=2: уникальных ключей 16920, сумма частот 92551; топ-3: [['.net framework', 'c#', 1003], ['asp.net', 'c#', 914], ['c#', 'postgresql', 861]]
+k=3: уникальных ключей 112376, сумма частот 309607; топ-3: [['asp.net', 'c#', 'postgresql', 352], ['.net framework', 'c#', 'postgresql', 311], ['.net framework', 'asp.net', 'c#', 308]]
+результаты: s3://hh-lake/results/mapreduce_chunk7/
+skills_k1.csv    64 MiB 6494D84687724CCA  7 MiB 6494D84687724CCA  совпадает: True
+pairs_k2.csv     64 MiB 17F0BC26B0CE33D6  7 MiB 17F0BC26B0CE33D6  совпадает: True
+triples_k3.csv   64 MiB DF05762386EF5336  7 MiB DF05762386EF5336  совпадает: True
